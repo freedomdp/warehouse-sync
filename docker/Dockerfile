@@ -12,4 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY ./app .
 
+# Устанавливаем дополнительные зависимости
+RUN pip install --no-cache-dir fastapi uvicorn sqlalchemy mysqlclient pytz
+
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
