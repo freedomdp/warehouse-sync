@@ -1,12 +1,14 @@
-import time
+import logging
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import create_engine, Column, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from datetime import datetime, timedelta
-import os
+from app.db.database import engine, Base, SessionLocal
+from app.routers import startup_time, product
+from app.models import StartupTime
+from datetime import datetime
 import pytz
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -19,56 +21,25 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Настройка базы данных
-DATABASE_URL = os.getenv("DATABASE_URL")
-engine = create_engine(DATABASE_URL)
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
-
-# Определение часового пояса Киева
-kiev_tz = pytz.timezone('Europe/Kiev')
-
-# Модель для времени запуска
-class StartupTime(Base):
-    __tablename__ = "startup_time"
-    id = Column(DateTime(timezone=True), primary_key=True, default=lambda: datetime.now(kiev_tz))
-
-def wait_for_db(max_retries=30, retry_interval=2):
-    """Ожидание готовности базы данных"""
-    for _ in range(max_retries):
-        try:
-            with engine.connect() as connection:
-                connection.execute("SELECT 1")
-            print("База данных готова")
-            return
-        except Exception as e:
-            print(f"Ожидание базы данных... ({e})")
-            time.sleep(retry_interval)
-    raise Exception("Не удалось подключиться к базе данных")
-
 @app.on_event("startup")
 async def startup_event():
-    """Функция, выполняемая при запуске приложения"""
-    wait_for_db()
     Base.metadata.create_all(bind=engine)
     db = SessionLocal()
-    db.query(StartupTime).delete()
-    db.add(StartupTime())
-    db.commit()
-    db.close()
-    print("Время запуска записано в базу данных")
+    try:
+        kiev_tz = pytz.timezone('Europe/Kiev')
+        current_time = datetime.now(kiev_tz)
+        startup_time = StartupTime(id=current_time)
+        db.add(startup_time)
+        db.commit()
+        logger.info(f"Сервер запущен в {current_time}")
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении времени запуска: {e}")
+    finally:
+        db.close()
 
-@app.get("/startup-time")
-async def get_startup_time():
-    """Возвращает время запуска сервера"""
-    db = SessionLocal()
-    startup_time = db.query(StartupTime).first()
-    db.close()
-    if startup_time:
-        kiev_time = startup_time.id.astimezone(kiev_tz)
-        # Не добавляем год, так как время уже в правильном часовом поясе
-        return {"startup_time": kiev_time.strftime("%d.%m.%Y %H:%M:%S")}
-    return {"error": "Время запуска не найдено"}
+# Подключаем роутеры
+app.include_router(startup_time.router)
+app.include_router(product.router)
 
 if __name__ == "__main__":
     import uvicorn

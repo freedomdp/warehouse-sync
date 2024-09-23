@@ -1,7 +1,7 @@
 import pytz
 from datetime import datetime
 from sqlalchemy.orm import Session
-from app.modules.startup_time import StartupTime
+from app.models.startup_time import StartupTime
 
 class TimeService:
     @staticmethod
