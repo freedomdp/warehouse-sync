@@ -7,32 +7,28 @@ services:
       - --default-authentication-plugin=caching_sha2_password
       - --character-set-server=utf8mb4
       - --collation-server=utf8mb4_unicode_ci
-      - --skip-host-cache
-      - --skip-name-resolve
+      - --pid-file=/var/lib/mysql/mysqld.pid
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: mywarehousesync
-      MYSQL_USER: user
-      MYSQL_PASSWORD: LP9PyH3jx90!
-      TZ: Europe/Kiev
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: ${MYSQL_DATABASE}
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     volumes:
       - mysql_data:/var/lib/mysql
     ports:
       - "3306:3306"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u$$MYSQL_USER", "-p$$MYSQL_PASSWORD"]
-      interval: 5s
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u${MYSQL_USER}", "-p${MYSQL_PASSWORD}"]
+      interval: 10s
       timeout: 5s
-      retries: 20
+      retries: 5
 
   app:
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
+    build: .
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=mysql://user:LP9PyH3jx90!@db/mywarehousesync
+      - DATABASE_URL=${DATABASE_URL}
       - TZ=Europe/Kiev
     depends_on:
       db:
