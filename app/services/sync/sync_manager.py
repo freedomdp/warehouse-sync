@@ -1,11 +1,11 @@
+# Файл для управления процессом синхронизации
+
 from datetime import datetime
 import json
 from app.services.sync.auth_service import AuthService
 from app.services.sync.data_retrieval_service import DataRetrievalService
-from app.utils.logger import setup_logger
+from app.utils.utils import logger
 from app.config import settings
-
-logger = setup_logger(__name__)
 
 class SyncManager:
     def __init__(self):

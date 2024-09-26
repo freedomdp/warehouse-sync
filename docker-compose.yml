@@ -1,5 +1,4 @@
 version: '3.8'
-
 services:
   db:
     image: mysql:8.0
@@ -18,7 +17,6 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-
   app:
     build: .
     ports:
@@ -29,6 +27,9 @@ services:
       - MY_SKLAD_PASSWORD=${MY_SKLAD_PASSWORD}
       - MY_SKLAD_API_URL=${MY_SKLAD_API_URL}
       - TZ=Europe/Kiev
+    volumes:
+      - .:/app
+      - ./data:/app/data
     depends_on:
       db:
         condition: service_healthy

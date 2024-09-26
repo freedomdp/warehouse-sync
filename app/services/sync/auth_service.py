@@ -1,8 +1,7 @@
 import base64
 import httpx
 from app.config import settings
-from app.utils.logger import setup_logger
-logger = setup_logger(__name__)
+from app.utils.utils import logger
 
 class AuthService:
     def __init__(self):

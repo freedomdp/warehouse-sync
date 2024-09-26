@@ -5,10 +5,15 @@ import sys
 import os
 import psutil
 import gc
-from sqlalchemy import create_engine, text
+import asyncio
+import json
+import xml.etree.ElementTree as ET
+from xml.dom import minidom
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.ext.declarative import declarative_base
-from app.config.config import settings
+from app.config import settings
+from app.config.field_mapping import FIELD_MAPPING
 
 kiev_tz = pytz.timezone('Europe/Kiev')
 Base = declarative_base()
@@ -17,7 +22,11 @@ def setup_logger(name):
     logger = logging.getLogger(name)
     logger.setLevel(logging.INFO)
     formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    file_handler = logging.FileHandler('logs/sync.log')
+
+    log_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'logs')
+    os.makedirs(log_dir, exist_ok=True)
+
+    file_handler = logging.FileHandler(os.path.join(log_dir, 'sync.log'))
     file_handler.setFormatter(formatter)
     stream_handler = logging.StreamHandler(sys.stdout)
     stream_handler.setFormatter(formatter)
@@ -25,24 +34,28 @@ def setup_logger(name):
     logger.addHandler(stream_handler)
     return logger
 
-logger = setup_logger(__name__)
+logger = setup_logger('app')
 
-def create_db_engine(database_url):
-    return create_engine(database_url)
+def create_async_db_engine(database_url):
+    return create_async_engine(database_url.replace('mysql://', 'mysql+aiomysql://'), echo=True)
 
-def create_session_local(engine):
-    return sessionmaker(autocommit=False, autoflush=False, bind=engine)
+def create_async_session_factory(engine):
+    return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
-def wait_for_db(engine, max_retries=60, retry_interval=5):
+async def get_async_session():
+    async with AsyncSessionLocal() as session:
+        yield session
+
+async def wait_for_db(engine, max_retries=60, retry_interval=5):
     for _ in range(max_retries):
         try:
-            with engine.connect() as connection:
-                connection.execute(text("SELECT 1"))
+            async with engine.connect() as conn:
+                await conn.execute("SELECT 1")
             logger.info("База данных готова")
             return
         except Exception as e:
             logger.warning(f"Ожидание базы данных... ({e})")
-            time.sleep(retry_interval)
+            await asyncio.sleep(retry_interval)
     raise Exception("Не удалось подключиться к базе данных")
 
 def check_memory_usage(threshold):
@@ -74,6 +87,23 @@ def clear_memory():
     memory_info = process.memory_info()
     logger.info(f"Memory usage after cleanup: {memory_info.rss / 1024 / 1024:.2f} MB")
 
-# Создание engine и SessionLocal здесь, чтобы их можно было импортировать
-engine = create_db_engine(settings.DATABASE_URL)
-SessionLocal = create_session_local(engine)
+def json_to_xml(json_file_path, xml_file_path):
+    with open(json_file_path, 'r') as json_file:
+        data = json.load(json_file)
+
+    root = ET.Element('products')
+    for item in data:
+        product = ET.SubElement(root, 'product')
+        for key, value in FIELD_MAPPING.items():
+            if key in item:
+                ET.SubElement(product, value).text = str(item[key])
+
+    xml_str = minidom.parseString(ET.tostring(root, encoding='unicode')).toprettyxml(indent="  ")
+    with open(xml_file_path, 'w', encoding='utf-8') as xml_file:
+        xml_file.write(xml_str)
+
+    logger.info(f"XML file has been created at {xml_file_path}")
+
+# Создание асинхронного движка и фабрики сессий
+async_engine = create_async_db_engine(settings.DATABASE_URL)
+AsyncSessionLocal = create_async_session_factory(async_engine)

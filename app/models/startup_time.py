@@ -1,5 +1,5 @@
 from sqlalchemy import Column, DateTime
-from app.db.database import Base
+from app.db.base import Base
 
 class StartupTime(Base):
     __tablename__ = "startup_time"
