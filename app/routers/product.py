@@ -10,7 +10,7 @@ router = APIRouter()
 async def sync_products(db: Session = Depends(get_db)):
     try:
         my_sklad_service = MySkladService()
-        products = my_sklad_service.get_products()
+        products = await my_sklad_service.get_products()
 
         for product_data in products:
             existing_product = db.query(Product).filter(Product.external_id == product_data["id"]).first()
