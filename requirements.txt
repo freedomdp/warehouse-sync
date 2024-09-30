@@ -3,7 +3,9 @@ uvicorn==0.23.2
 httpx==0.25.0
 pydantic-settings==2.0.3
 psutil==5.9.5
-pytz
-sqlalchemy
-mysqlclient
-aiomysql
+pytz==2024.2
+sqlalchemy==2.0.35
+mysqlclient==2.2.4
+aiomysql==0.2.0
+aiohttp==3.9.3
+pytest==8.3.3

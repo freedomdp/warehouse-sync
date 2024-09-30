@@ -9,14 +9,10 @@ import asyncio
 import json
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
-from sqlalchemy.ext.declarative import declarative_base
 from app.config import settings
 from app.config.field_mapping import FIELD_MAPPING
 
 kiev_tz = pytz.timezone('Europe/Kiev')
-Base = declarative_base()
 
 def setup_logger(name):
     logger = logging.getLogger(name)
@@ -35,28 +31,6 @@ def setup_logger(name):
     return logger
 
 logger = setup_logger('app')
-
-def create_async_db_engine(database_url):
-    return create_async_engine(database_url.replace('mysql://', 'mysql+aiomysql://'), echo=True)
-
-def create_async_session_factory(engine):
-    return sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-
-async def get_async_session():
-    async with AsyncSessionLocal() as session:
-        yield session
-
-async def wait_for_db(engine, max_retries=60, retry_interval=5):
-    for _ in range(max_retries):
-        try:
-            async with engine.connect() as conn:
-                await conn.execute("SELECT 1")
-            logger.info("База данных готова")
-            return
-        except Exception as e:
-            logger.warning(f"Ожидание базы данных... ({e})")
-            await asyncio.sleep(retry_interval)
-    raise Exception("Не удалось подключиться к базе данных")
 
 def check_memory_usage(threshold):
     memory = psutil.virtual_memory()
@@ -87,10 +61,7 @@ def clear_memory():
     memory_info = process.memory_info()
     logger.info(f"Memory usage after cleanup: {memory_info.rss / 1024 / 1024:.2f} MB")
 
-def json_to_xml(json_file_path, xml_file_path):
-    with open(json_file_path, 'r') as json_file:
-        data = json.load(json_file)
-
+def json_to_xml(data, xml_file_path):
     root = ET.Element('products')
     for item in data:
         product = ET.SubElement(root, 'product')
@@ -103,7 +74,3 @@ def json_to_xml(json_file_path, xml_file_path):
         xml_file.write(xml_str)
 
     logger.info(f"XML file has been created at {xml_file_path}")
-
-# Создание асинхронного движка и фабрики сессий
-async_engine = create_async_db_engine(settings.DATABASE_URL)
-AsyncSessionLocal = create_async_session_factory(async_engine)

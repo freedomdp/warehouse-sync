@@ -1,26 +1,24 @@
 FIELD_MAPPING = {
     "id": "external_id",
     "name": "name",
+    "description": "description",
     "code": "code",
     "article": "article",
-    "minPrice": "min_price",
     "salePrices": "sale_price",
-    "archived": "archived",
-    "updated": "updated_at"
+    "updated": "updated_at",
+    "pathName": "pathName"
 }
 
-def map_product(product_data):
-    """
-    Функция для маппинга данных продукта из API в формат модели базы данных.
-    """
+def map_product(product):
     mapped_product = {}
-    for json_field, db_field in FIELD_MAPPING.items():
-        if json_field in product_data:
-            if json_field == "minPrice":
-                mapped_product[db_field] = product_data[json_field]["value"] / 100
-            elif json_field == "salePrices":
-                sale_price = next((price['value'] for price in product_data[json_field] if price['priceType'].get('name') == 'Цена продажи'), None)
-                mapped_product[db_field] = sale_price / 100 if sale_price else None
+    for source_key, target_key in FIELD_MAPPING.items():
+        if source_key in product:
+            if source_key == "salePrices":
+                sale_prices = product[source_key]
+                if sale_prices and len(sale_prices) > 0:
+                    mapped_product[target_key] = sale_prices[0].get("value")
+                else:
+                    mapped_product[target_key] = None
             else:
-                mapped_product[db_field] = product_data[json_field]
+                mapped_product[target_key] = product[source_key]
     return mapped_product
