@@ -11,3 +11,4 @@ data/products.json
 data/products_cleaned.json
 data/products_cleaned.xml
 app/credentials/google_sheets_credentials.json
+app/credentials/google_sheets_credentials.json
