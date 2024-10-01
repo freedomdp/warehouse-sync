@@ -1,13 +1,13 @@
-import asyncio
+from fastapi import APIRouter, HTTPException, Query
+from typing import Optional
 import aiohttp
 import json
 import xml.etree.ElementTree as ET
-from fastapi import APIRouter, HTTPException
 from app.services.sync.auth_service import AuthService
 from app.utils.utils import logger
 from app.config import settings
 import os
-from multiprocessing import Pool
+from urllib.parse import unquote
 
 router = APIRouter()
 
@@ -84,7 +84,7 @@ def process_item(item, products_dict):
         }
     return None
 
-def combine_data(stock_data, products_data):
+def combine_data(stock_data, products_data, path_name=None):
     """
     Совмещает данные об остатках с информацией о товарах.
     """
@@ -111,15 +111,18 @@ def combine_data(stock_data, products_data):
             if sale_price is not None:
                 sale_price = float(sale_price) / 100  # Корректировка цены
 
-            combined_data.append({
-                "article": article,
-                "name": item.get("name") or product_info.get("name"),
-                "description": product_info.get("description"),
-                "sale_price": sale_price,
-                "code": item.get("code") or product_info.get("code"),
-                "stock": item.get("stock"),
-                "pathName": product_info.get("pathName")
-            })
+            product_path_name = product_info.get("pathName")
+
+            if path_name is None or (product_path_name and product_path_name.startswith(path_name)):
+                combined_data.append({
+                    "article": article,
+                    "name": item.get("name") or product_info.get("name"),
+                    "description": product_info.get("description"),
+                    "sale_price": sale_price,
+                    "code": item.get("code") or product_info.get("code"),
+                    "stock": item.get("stock"),
+                    "pathName": product_path_name
+                })
         else:
             logger.warning(f"Артикул {article} не найден в products_cleaned.json")
             skipped_items += 1
@@ -164,12 +167,17 @@ def save_xml_result(data, filename="data/warehouse_stock_result.xml"):
         logger.error(f"Ошибка при сохранении результата в XML: {e}")
         raise HTTPException(status_code=500, detail="Ошибка при сохранении результата в XML")
 
+
 @router.get("/warehouse_stock")
-async def warehouse_stock():
+@router.get("/warehouse_stock/{pathName}")
+async def warehouse_stock(pathName: Optional[str] = None):
     """
     Эндпоинт для получения и обработки данных об остатках на складе.
     """
     try:
+        if pathName:
+            pathName = unquote(pathName)  # Декодируем URL-encoded строку
+
         auth_service = AuthService()
         headers = auth_service.get_auth_header()
 
@@ -182,16 +190,29 @@ async def warehouse_stock():
         products_data = load_products_data()
         logger.info(f"Загружено {len(products_data)} товаров из products_cleaned.json")
 
-        combined_data = combine_data(stock_data, products_data)
+        combined_data = combine_data(stock_data, products_data, pathName)
 
-        save_json_result(combined_data)
-        save_xml_result(combined_data)
+        # Формируем имена файлов в зависимости от наличия параметра pathName
+        json_filename = f"data/warehouse_stock_{'_'.join(pathName.split('/'))}_result.json" if pathName else "data/warehouse_stock_result.json"
+        xml_filename = f"data/warehouse_stock_{'_'.join(pathName.split('/'))}_result.xml" if pathName else "data/warehouse_stock_result.xml"
+
+        save_json_result(combined_data, json_filename)
+        save_xml_result(combined_data, xml_filename)
+
+        # Формируем сообщение в зависимости от наличия категории
+        if pathName:
+            message = f"Данные об остатках по категории '{pathName}' успешно обработаны и сохранены"
+        else:
+            message = "Данные об остатках успешно обработаны и сохранены"
 
         return {
-            "message": "Данные об остатках успешно обработаны и сохранены",
+            "message": message,
             "processed_items": len(combined_data),
             "total_stock_items": len(stock_data),
-            "total_products": len(products_data)
+            "total_products": len(products_data),
+            "category": pathName if pathName else "Все категории",
+            "json_file": json_filename,
+            "xml_file": xml_filename
         }
     except Exception as e:
         logger.error(f"Ошибка при обработке запроса: {str(e)}", exc_info=True)

@@ -16,7 +16,10 @@ class Settings(BaseSettings):
     REQUEST_DELAY: float = 2.0
     # Путь и название файла для сохранения данных о товарах
     OUTPUT_FILE: str = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), 'data', 'products.json')
-
+    # ID Google таблицы
+    GOOGLE_SPREADSHEET_ID: str = '1kwopnPKCGNeVL-NMjvHE0y6PBugoxJoZgDcwBRb0BN0'
+       # Путь к файлу с учетными данными Google
+    GOOGLE_CREDENTIALS_FILE: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'credentials', 'google_sheets_credentials.json')
     class Config:
         env_file = ".env"
 
