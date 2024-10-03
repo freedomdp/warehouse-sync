@@ -1,0 +1,11 @@
+services:
+  app:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    environment:
+      - MY_SKLAD_API_URL=${MY_SKLAD_API_URL}
+      - MY_SKLAD_LOGIN=${MY_SKLAD_LOGIN}
+      - MY_SKLAD_PASSWORD=${MY_SKLAD_PASSWORD}
