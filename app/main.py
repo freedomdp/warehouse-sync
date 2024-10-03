@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import root, products, categories, product_details, simple_category, sync, async_sync, warehouse_stock, google_sheets
+from app.routers import root, warehouse_stock, assortment, warehouse_balances, product_collector
 from app.utils.utils import logger
 import psutil
 
@@ -17,14 +17,10 @@ app.add_middleware(
 
 # Подключение роутеров
 app.include_router(root.router)
-app.include_router(products.router)
-app.include_router(categories.router)
-app.include_router(product_details.router)
-app.include_router(simple_category.router)
-app.include_router(sync.router)
-app.include_router(async_sync.router)
 app.include_router(warehouse_stock.router)
-app.include_router(google_sheets.router)
+app.include_router(assortment.router)
+app.include_router(warehouse_balances.router)
+app.include_router(product_collector.router)
 
 @app.on_event("startup")
 async def startup_event():
