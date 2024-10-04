@@ -1,13 +1,13 @@
 FIELD_MAPPING = {
-    "id": "external_id",
-    "name": "name",
-    "description": "description",
-    "code": "code",
-    "article": "article",
-    "salePrices": "sale_price",
-    "updated": "updated_at",
-    "pathName": "pathName"
-}
+       "id": "external_id",
+       "name": "name",
+       "description": "description",
+       "code": "code",
+       "article": "article",
+       "salePrices": "sale_price",
+       "updated": "updated_at",
+       "pathName": "pathName"
+   }
 
 def map_product(product):
     mapped_product = {}

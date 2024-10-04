@@ -1,0 +1,53 @@
+# Ignore credentials folder
+/credentials/
+
+# Ignore logs folder
+/logs/
+
+# Ignore virtual environment
+/venv/
+
+# Ignore data folder
+/data/
+
+# Ignore .env file
+.env
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# IDE specific files
+.vscode/
+.idea/
+
+# OS generated files
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.swp
+
+# Ignore all local configuration files
+*.local
+
+# Ignore coverage reports
+.coverage
+htmlcov/
+
+# Ignore pytest cache
+.pytest_cache/
+
+# Ignore mypy cache
+.mypy_cache/
+
+# Ignore pipenv virtual environment
+/.venv
+
+# Ignore poetry virtual environment
+/.poetry
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/

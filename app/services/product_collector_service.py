@@ -16,9 +16,6 @@ class ProductCollectorService:
         self.json_dir = settings.JSON_DIR
 
     async def collect_and_process_data(self):
-        """
-        Собирает данные из всех источников, обрабатывает их и сохраняет в различных форматах.
-        """
         logger.info("Начало сбора и обработки данных о товарах")
         result = {
             "message": "Данные частично обработаны",
@@ -26,21 +23,18 @@ class ProductCollectorService:
             "errors": []
         }
         try:
-            # Шаг 1: Запуск эндпоинтов для обновления данных
-            await assortment_service.get_assortment()
-            await warehouse_stock_service.get_warehouse_stock()
-            await warehouse_balances_service.get_warehouse_balances()
-            result["steps_completed"].append("Data retrieval")
+            assortment_data = await assortment_service.get_assortment()
+            result["steps_completed"].append("Assortment data retrieval")
 
-            # Шаг 2: Чтение и объединение данных
-            assortment_data = self.read_json_file('assortment.json')
-            warehouse_balances_data = self.read_json_file('warehouse_balances.json')
-            warehouse_stock_data = self.read_json_file('warehouse_stock.json')
+            warehouse_stock_data = await warehouse_stock_service.get_warehouse_stock()
+            result["steps_completed"].append("Warehouse stock data retrieval")
 
-            combined_data = self.combine_data(assortment_data, warehouse_balances_data, warehouse_stock_data)
+            warehouse_balances_data = await warehouse_balances_service.get_warehouse_balances()
+            result["steps_completed"].append("Warehouse balances data retrieval")
+
+            combined_data = self.combine_data(assortment_data, warehouse_stock_data, warehouse_balances_data)
             result["steps_completed"].append("Data combination")
 
-            # Шаг 3: Сохранение объединенных данных
             json_filename = os.path.join(settings.JSON_DIR, 'combined_products.json')
             self.save_to_json(combined_data, json_filename)
 
@@ -48,7 +42,6 @@ class ProductCollectorService:
             self.save_to_xml(combined_data, xml_filename)
             result["steps_completed"].append("Data saving (JSON and XML)")
 
-            # Шаг 4: Выгрузка в Google Sheets
             try:
                 sheet_url = await google_sheets_service.upload_to_sheets(combined_data)
                 result["steps_completed"].append("Google Sheets upload")
@@ -62,62 +55,71 @@ class ProductCollectorService:
             result["xml_file"] = xml_filename
             result["total_products"] = len(combined_data)
 
-            return result
         except Exception as e:
             logger.error(f"Ошибка при сборе и обработке данных: {str(e)}", exc_info=True)
             result["errors"].append(f"General error: {str(e)}")
-            return result
 
-    def read_json_file(self, filename):
-        """Чтение JSON файла."""
-        file_path = os.path.join(self.json_dir, filename)
-        with open(file_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        return result
 
-    def combine_data(self, assortment_data, warehouse_balances_data, warehouse_stock_data):
-        """Объединение данных из разных источников."""
+    def combine_data(self, assortment_data, warehouse_stock_data, warehouse_balances_data):
         combined_data = {}
 
-        # Создаем словари для быстрого поиска
-        balances_dict = {item['id']: item for item in warehouse_balances_data}
-        stock_dict = {item['id']: item for item in warehouse_stock_data}
-
         for item in assortment_data:
-            product_id = item['id']
-            combined_item = {
-                'id': product_id,
-                'article': item.get('article', ''),
-                'code': item.get('code', ''),
-                'externalCode': item.get('externalCode', ''),
-                'name': item.get('name', ''),
-                'description': item.get('description', ''),
-                'pathname': item.get('pathname', ''),
-                'store': balances_dict.get(product_id, {}).get('store', ''),
-                'salePrice': stock_dict.get(product_id, {}).get('salePrice', 0),
-                'stock': stock_dict.get(product_id, {}).get('stock', 0),
-                'updated': self.format_date(item.get('updated', ''))
-            }
-            combined_data[product_id] = combined_item
+            if isinstance(item, dict):
+                product_id = item.get('id')
+                if product_id:
+                    combined_data[product_id] = {
+                        'id': product_id,
+                        'article': item.get('article', ''),
+                        'code': item.get('code', ''),
+                        'externalCode': item.get('externalCode', ''),
+                        'name': item.get('name', ''),
+                        'description': item.get('description', ''),
+                        'pathname': item.get('pathname', ''),
+                        'updated': self.format_date(item.get('updated', ''))
+                    }
+            else:
+                logger.warning(f"Некорректный формат элемента в assortment_data: {item}")
+
+        for item in warehouse_stock_data:
+            if isinstance(item, dict):
+                product_id = item.get('id')
+                if product_id and product_id in combined_data:
+                    combined_data[product_id].update({
+                        'salePrice': item.get('salePrice', 0),
+                        'stock': item.get('stock', 0)
+                    })
+            else:
+                logger.warning(f"Некорректный формат элемента в warehouse_stock_data: {item}")
+
+        for item in warehouse_balances_data:
+            if isinstance(item, dict):
+                product_id = item.get('id')
+                if product_id and product_id in combined_data:
+                    combined_data[product_id]['store'] = item.get('store', '')
+            else:
+                logger.warning(f"Некорректный формат элемента в warehouse_balances_data: {item}")
 
         return list(combined_data.values())
 
     def format_date(self, date_string):
-        """Форматирование даты в нужный формат."""
         if not date_string:
             return ''
-        dt = datetime.fromisoformat(date_string.replace('Z', '+00:00'))
-        kiev_tz = pytz.timezone('Europe/Kiev')
-        dt_kiev = dt.astimezone(kiev_tz)
-        return dt_kiev.strftime('%d.%m.%y %H:%M')
+        try:
+            dt = datetime.fromisoformat(date_string.replace('Z', '+00:00'))
+            kiev_tz = pytz.timezone('Europe/Kiev')
+            dt_kiev = dt.astimezone(kiev_tz)
+            return dt_kiev.strftime('%d.%m.%y %H:%M')
+        except ValueError:
+            logger.warning(f"Некорректный формат даты: {date_string}")
+            return date_string
 
     def save_to_json(self, data, filename):
-        """Сохранение данных в JSON файл."""
         with open(filename, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
         logger.info(f"Данные сохранены в JSON: {filename}")
 
     def save_to_xml(self, data, filename):
-        """Сохранение данных в XML файл."""
         root = ET.Element('products')
         for item in data:
             product = ET.SubElement(root, 'product')
