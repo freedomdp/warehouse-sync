@@ -1,16 +1,15 @@
-import time
 import pytz
 import logging
 import sys
 import os
 import psutil
 import gc
-import asyncio
 import json
 import xml.etree.ElementTree as ET
 from xml.dom import minidom
 from app.config import settings
 from app.config.field_mapping import FIELD_MAPPING
+
 
 kiev_tz = pytz.timezone('Europe/Kiev')
 
@@ -74,3 +73,11 @@ def json_to_xml(data, xml_file_path):
         xml_file.write(xml_str)
 
     logger.info(f"XML file has been created at {xml_file_path}")
+
+def load_json_file(file_path):
+    try:
+        with open(file_path, 'r', encoding='utf-8') as file:
+            return json.load(file)
+    except Exception as e:
+        logger.error(f"Ошибка при загрузке файла {file_path}: {str(e)}")
+        return {}

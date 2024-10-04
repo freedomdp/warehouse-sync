@@ -22,55 +22,84 @@ class GoogleSheetsService:
         Выгружает данные в существующую Google таблицу с поддержкой больших объемов данных.
         """
         try:
-            sheet = self.service.spreadsheets()
+            sheets = self.service.spreadsheets()
+
+            # Получаем ID листа
+            sheet_metadata = sheets.get(spreadsheetId=self.spreadsheet_id).execute()
+            sheet_id = sheet_metadata['sheets'][0]['properties']['sheetId']
 
             # Очищаем существующий лист
-            sheet.values().clear(
+            sheets.values().clear(
                 spreadsheetId=self.spreadsheet_id,
                 range=f"{self.sheet_name}!A1:Z"
             ).execute()
 
+            # Определяем порядок столбцов
+            columns = ['id', 'article', 'code', 'externalCode', 'pathname', 'name', 'description', 'salePrice', 'store', 'stock', 'updated']
+
             # Подготавливаем данные для вставки
-            headers = list(data[0].keys())
-            values = [headers]
+            values = [columns]  # Заголовки
             for item in data:
-                values.append([str(item.get(key, '')) for key in headers])
+                row = [str(item.get(col, '')) for col in columns]
+                values.append(row)
 
-            # Разбиваем данные на части по 5000 строк
-            batch_size = 5000
-            for i in range(0, len(values), batch_size):
-                batch = values[i:i+batch_size]
+            # Вставляем данные
+            sheets.values().update(
+                spreadsheetId=self.spreadsheet_id,
+                range=f"{self.sheet_name}!A1",
+                valueInputOption='RAW',
+                body={'values': values}
+            ).execute()
 
-                body = {'values': batch}
-                for attempt in range(3):  # Попытки повтора при ошибке
-                    try:
-                        sheet.values().append(
-                            spreadsheetId=self.spreadsheet_id,
-                            range=f"{self.sheet_name}!A1",
-                            valueInputOption='RAW',
-                            body=body
-                        ).execute()
-                        break
-                    except HttpError as e:
-                        if e.resp.status in [403, 500, 503]:  # Ошибки, которые могут быть временными
-                            logger.warning(f"Attempt {attempt + 1} failed. Retrying...")
-                            time.sleep(5)  # Пауза перед повторной попыткой
-                        else:
-                            raise
+            # Форматирование: закрепление первой строки и жирный шрифт
+            requests = [
+                {
+                    "updateSheetProperties": {
+                        "properties": {
+                            "sheetId": sheet_id,
+                            "gridProperties": {
+                                "frozenRowCount": 1
+                            }
+                        },
+                        "fields": "gridProperties.frozenRowCount"
+                    }
+                },
+                {
+                    "repeatCell": {
+                        "range": {
+                            "sheetId": sheet_id,
+                            "startRowIndex": 0,
+                            "endRowIndex": 1
+                        },
+                        "cell": {
+                            "userEnteredFormat": {
+                                "textFormat": {
+                                    "bold": True
+                                }
+                            }
+                        },
+                        "fields": "userEnteredFormat.textFormat.bold"
+                    }
+                }
+            ]
+
+            sheets.batchUpdate(
+                spreadsheetId=self.spreadsheet_id,
+                body={"requests": requests}
+            ).execute()
 
             # Добавляем комментарий с датой выгрузки
             kiev_tz = pytz.timezone('Europe/Kiev')
             current_time = datetime.now(kiev_tz).strftime("%d.%m.%Y %H:%M")
             comment = f'Дата выгрузки: {current_time}'
-
-            sheet.spreadsheets().batchUpdate(
+            sheets.batchUpdate(
                 spreadsheetId=self.spreadsheet_id,
                 body={
                     "requests": [
                         {
                             "updateCells": {
                                 "range": {
-                                    "sheetId": 0,
+                                    "sheetId": sheet_id,
                                     "startRowIndex": 0,
                                     "endRowIndex": 1,
                                     "startColumnIndex": 0,
@@ -93,7 +122,6 @@ class GoogleSheetsService:
             ).execute()
 
             logger.info(f"Данные успешно выгружены в Google Sheets. Всего строк: {len(values)}")
-
             return f"https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}"
         except Exception as e:
             logger.error(f"Ошибка при выгрузке в Google Sheets: {str(e)}", exc_info=True)
