@@ -19,37 +19,28 @@ class WarehouseStockService:
         """
         self.base_url = settings.MY_SKLAD_API_URL
 
-    async def get_warehouse_stock(self, filter_params=None):
+    async def get_warehouse_stock(self):
         """
-        Получает данные о складских запасах асинхронно, учитывая пагинацию.
-
-        :param filter_params: Параметры фильтрации (опционально)
-        :return: Обработанные данные о складских запасах
+        Получает все данные о складских запасах асинхронно, учитывая пагинацию.
         """
         endpoint = "report/stock/all"
         logger.info(f"Начало получения данных о складских запасах для эндпоинта: {endpoint}")
         try:
             all_data = []
             offset = 0
-            limit = 1000  # Максимальное количество записей, возвращаемых за один запрос
-
+            limit = 1000
             while True:
                 url = f"{self.base_url}/{endpoint}?offset={offset}&limit={limit}"
-                if filter_params:
-                    url += "&" + "&".join([f"{k}={v}" for k, v in filter_params.items()])
-
                 headers = await auth_service.get_auth_header()
-                logger.info(f"Запрос к URL: {url}")
-
                 async with aiohttp.ClientSession() as session:
                     async with session.get(url, headers=headers) as response:
-                        logger.info(f"Код ответа: {response.status}")
                         if response.status == 200:
                             data = await response.json()
-                            all_data.extend(data.get('rows', []))
-                            logger.info(f"Получено {len(data.get('rows', []))} записей. Всего: {len(all_data)}")
-                            if len(data.get('rows', [])) < limit:
-                                break  # Все данные получены
+                            rows = data.get('rows', [])
+                            all_data.extend(rows)
+                            logger.info(f"Получено {len(rows)} записей. Всего: {len(all_data)}. Offset: {offset}")
+                            if len(rows) < limit:
+                                break
                             offset += limit
                         elif response.status == 401:
                             logger.warning("Получен код 401, попытка обновления токена")
@@ -57,6 +48,8 @@ class WarehouseStockService:
                         else:
                             logger.error(f"Неожиданный код ответа: {response.status}")
                             raise HTTPException(status_code=response.status, detail="Ошибка при получении данных от API МойСклад")
+
+            logger.info(f"Всего получено записей: {len(all_data)}")
 
             # Сохранение сырых данных
             raw_json_path = os.path.join(settings.JSON_DIR, 'warehouse_stock_raw.json')
@@ -90,8 +83,7 @@ class WarehouseStockService:
                 "raw_data_file": raw_json_path,
                 "processed_data_file": json_filename,
                 "xml_file": xml_filename,
-                "archive_file": archive_path,
-                "applied_filters": filter_params or {}
+                "archive_file": archive_path
             }
         except Exception as e:
             logger.error(f"Ошибка при получении данных о складских запасах: {str(e)}", exc_info=True)
@@ -137,7 +129,7 @@ class WarehouseStockService:
         Извлекает цену продажи из элемента.
 
         :param item: Элемент данных
-        :return: Цена продажи в рублях
+        :return: Цена продажи в гривнах
         """
         sale_price = item.get('salePrice')
         if isinstance(sale_price, dict):
