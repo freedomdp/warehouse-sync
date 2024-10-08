@@ -1,5 +1,6 @@
 import os
 import json
+from datetime import datetime
 import xml.etree.ElementTree as ET
 from app.utils.utils import logger, load_json_file
 from app.services.google_sheets_service import google_sheets_service
@@ -55,6 +56,58 @@ class ProductCollectorService:
         logger.info(f"Объединено {len(combined_data)} записей")
         return list(combined_data.values())
 
+    def merge_duplicate_products(self, combined_data):
+        """
+        Объединяет парные записи о товарах на основе поля 'code'.
+
+        :param combined_data: Список словарей с данными о товарах
+        :return: Список объединенных данных о товарах
+        """
+        # Создаем словарь для хранения товаров по коду
+        products_by_code = {}
+
+        # Проходим по всем товарам
+        for product in combined_data:
+            code = product.get('code')
+            if code not in products_by_code:
+                products_by_code[code] = []
+            products_by_code[code].append(product)
+
+        merged_products = []
+
+        # Объединяем парные записи
+        for code, products in products_by_code.items():
+            if len(products) == 2:
+                # Определяем, какая запись имеет значение в поле 'article'
+                product_with_article = next((p for p in products if p.get('article')), None)
+                product_without_article = next((p for p in products if not p.get('article')), None)
+
+                if product_with_article and product_without_article:
+                    # Объединяем данные
+                    merged_product = {
+                        'id': product_with_article['id'],
+                        'article': product_with_article['article'],
+                        'code': product_with_article['code'],
+                        'externalCode': product_with_article['externalCode'],
+                        'pathname': product_with_article['pathname'],
+                        'name': product_with_article['name'],
+                        'description': product_with_article['description'],
+                        'salePrice': product_without_article.get('salePrice', ''),
+                        'store': product_without_article.get('store', ''),
+                        'stock': product_without_article.get('stock', ''),
+                        'updated': product_with_article['updated']
+                    }
+                    merged_products.append(merged_product)
+                else:
+                    # Если не удалось определить пару, добавляем оба продукта
+                    merged_products.extend(products)
+            else:
+                # Если нет пары, добавляем продукт как есть
+                merged_products.extend(products)
+
+        logger.info(f"Объединено {len(combined_data) - len(merged_products)} пар товаров")
+        return merged_products
+
     async def collect_and_process_data(self):
         logger.info("Начало сбора и обработки данных о товарах")
         result = {
@@ -80,31 +133,34 @@ class ProductCollectorService:
             result["steps_completed"].append("Data combination")
             logger.info(f"Объединено {len(combined_data)} записей")
 
-            if not combined_data:
-                result["warnings"].append("No data after combination")
-                logger.warning("Нет данных после объединения")
-            else:
-                json_filename = os.path.join(self.json_dir, 'combined_products.json')
-                self.save_to_json(combined_data, json_filename)
-                result["steps_completed"].append("JSON saving")
+            merged_data = self.merge_duplicate_products(combined_data)
+            result["steps_completed"].append("Duplicate products merged")
+            logger.info(f"После объединения дубликатов осталось {len(merged_data)} записей")
 
-                xml_filename = os.path.join(self.xml_dir, 'combined_products.xml')
-                self.save_to_xml(combined_data, xml_filename)
-                result["steps_completed"].append("XML saving")
+            if not merged_data:
+                result["warnings"].append("No data after merging duplicates")
 
+            json_filename = os.path.join(self.json_dir, 'combined_products.json')
+            self.save_to_json(merged_data, json_filename)
+            xml_filename = os.path.join(self.xml_dir, 'combined_products.xml')
+            self.save_to_xml(merged_data, xml_filename)
+            result["steps_completed"].append("Data saving (JSON and XML)")
+
+            if merged_data:
                 try:
-                    sheet_url = await google_sheets_service.upload_to_sheets(combined_data)
+                    sheet_url = await google_sheets_service.upload_to_sheets(merged_data)
                     result["steps_completed"].append("Google Sheets upload")
                     result["google_sheet_url"] = sheet_url
-                    logger.info(f"Данные успешно выгружены в Google Sheets: {sheet_url}")
                 except Exception as e:
                     logger.error(f"Ошибка при выгрузке в Google Sheets: {str(e)}", exc_info=True)
                     result["errors"].append(f"Google Sheets upload failed: {str(e)}")
+            else:
+                result["warnings"].append("Skipping Google Sheets upload due to empty data")
 
-            result["message"] = "Данные успешно собраны и обработаны"
+            result["message"] = "Данные успешно собраны, обработаны и объединены"
             result["json_file"] = json_filename
             result["xml_file"] = xml_filename
-            result["total_products"] = len(combined_data)
+            result["total_products"] = len(merged_data)
         except Exception as e:
             logger.error(f"Ошибка при сборе и обработке данных: {str(e)}", exc_info=True)
             result["errors"].append(f"General error: {str(e)}")

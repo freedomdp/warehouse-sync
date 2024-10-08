@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.routers import root, warehouse_stock, assortment, warehouse_balances, product_collector
+from app.routers.woo import vtoman
 from app.utils.utils import logger
 import psutil
 
@@ -21,6 +22,9 @@ app.include_router(warehouse_stock.router)
 app.include_router(assortment.router)
 app.include_router(warehouse_balances.router)
 app.include_router(product_collector.router)
+
+# Упрощенное подключение роутера для WooCommerce vtoman
+app.include_router(vtoman.router, prefix="/vtoman")
 
 @app.on_event("startup")
 async def startup_event():

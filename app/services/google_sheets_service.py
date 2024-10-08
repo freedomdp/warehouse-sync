@@ -1,11 +1,12 @@
+import time
+import random
+import pytz
+from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from app.config import settings
 from app.utils.utils import logger
-import time
-from datetime import datetime
-import pytz
 
 class GoogleSheetsService:
     def __init__(self):
@@ -43,88 +44,125 @@ class GoogleSheetsService:
                 row = [str(item.get(col, '')) for col in columns]
                 values.append(row)
 
-            # Вставляем данные
-            sheets.values().update(
-                spreadsheetId=self.spreadsheet_id,
-                range=f"{self.sheet_name}!A1",
-                valueInputOption='RAW',
-                body={'values': values}
-            ).execute()
+            logger.info(f"Подготовлено {len(values) - 1} строк для загрузки в Google Sheets")
 
-            # Форматирование: закрепление первой строки и жирный шрифт
-            requests = [
-                {
-                    "updateSheetProperties": {
-                        "properties": {
-                            "sheetId": sheet_id,
-                            "gridProperties": {
-                                "frozenRowCount": 1
-                            }
-                        },
-                        "fields": "gridProperties.frozenRowCount"
-                    }
-                },
-                {
-                    "repeatCell": {
-                        "range": {
-                            "sheetId": sheet_id,
-                            "startRowIndex": 0,
-                            "endRowIndex": 1
-                        },
-                        "cell": {
-                            "userEnteredFormat": {
-                                "textFormat": {
-                                    "bold": True
-                                }
-                            }
-                        },
-                        "fields": "userEnteredFormat.textFormat.bold"
-                    }
-                }
-            ]
+            # Разбиваем данные на части и вставляем
+            batch_size = 1000
+            total_uploaded = 0
+            for i in range(0, len(values), batch_size):
+                batch = values[i:i+batch_size]
+                body = {'values': batch}
 
-            sheets.batchUpdate(
-                spreadsheetId=self.spreadsheet_id,
-                body={"requests": requests}
-            ).execute()
+                for attempt in range(5):  # Попытки повтора при ошибке
+                    try:
+                        response = sheets.values().append(
+                            spreadsheetId=self.spreadsheet_id,
+                            range=f"{self.sheet_name}!A1",
+                            valueInputOption='RAW',
+                            body=body
+                        ).execute(num_retries=3)
+                        total_uploaded += len(batch) - 1  # Вычитаем 1, так как первая строка - заголовки
+                        logger.info(f"Загружено {len(batch)} строк. Всего: {total_uploaded}")
+                        break
+                    except HttpError as e:
+                        if e.resp.status in [403, 500, 503] and attempt < 4:
+                            wait_time = (2 ** attempt) + (random.randint(0, 1000) / 1000)
+                            logger.warning(f"Attempt {attempt + 1} failed. Retrying in {wait_time} seconds...")
+                            time.sleep(wait_time)
+                        else:
+                            raise
+
+            # Проверяем количество загруженных строк
+            result = sheets.values().get(spreadsheetId=self.spreadsheet_id, range=f"{self.sheet_name}!A:A").execute()
+            actual_rows = len(result.get('values', [])) - 1  # Вычитаем 1, так как первая строка - заголовки
+
+            if actual_rows != len(data):
+                logger.error(f"Несоответствие количества строк: загружено {actual_rows}, ожидалось {len(data)}")
+                raise Exception("Количество загруженных строк не соответствует ожидаемому")
+
+            # Применяем форматирование
+            self.apply_formatting(sheet_id)
 
             # Добавляем комментарий с датой выгрузки
-            kiev_tz = pytz.timezone('Europe/Kiev')
-            current_time = datetime.now(kiev_tz).strftime("%d.%m.%Y %H:%M")
-            comment = f'Дата выгрузки: {current_time}'
-            sheets.batchUpdate(
-                spreadsheetId=self.spreadsheet_id,
-                body={
-                    "requests": [
-                        {
-                            "updateCells": {
-                                "range": {
-                                    "sheetId": sheet_id,
-                                    "startRowIndex": 0,
-                                    "endRowIndex": 1,
-                                    "startColumnIndex": 0,
-                                    "endColumnIndex": 1
-                                },
-                                "rows": [
-                                    {
-                                        "values": [
-                                            {
-                                                "note": comment
-                                            }
-                                        ]
-                                    }
-                                ],
-                                "fields": "note"
-                            }
-                        }
-                    ]
-                }
-            ).execute()
+            self.add_upload_date_comment(sheet_id)
 
-            logger.info(f"Данные успешно выгружены в Google Sheets. Всего строк: {len(values)}")
+            logger.info(f"Данные успешно выгружены в Google Sheets. Всего строк: {actual_rows}")
             return f"https://docs.google.com/spreadsheets/d/{self.spreadsheet_id}"
         except Exception as e:
             logger.error(f"Ошибка при выгрузке в Google Sheets: {str(e)}", exc_info=True)
             raise
+
+    def apply_formatting(self, sheet_id):
+        """Применяет форматирование к таблице."""
+        requests = [
+            {
+                "updateSheetProperties": {
+                    "properties": {
+                        "sheetId": sheet_id,
+                        "gridProperties": {
+                            "frozenRowCount": 1
+                        }
+                    },
+                    "fields": "gridProperties.frozenRowCount"
+                }
+            },
+            {
+                "repeatCell": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "startRowIndex": 0,
+                        "endRowIndex": 1
+                    },
+                    "cell": {
+                        "userEnteredFormat": {
+                            "textFormat": {
+                                "bold": True
+                            }
+                        }
+                    },
+                    "fields": "userEnteredFormat.textFormat.bold"
+                }
+            }
+        ]
+
+        self.service.spreadsheets().batchUpdate(
+            spreadsheetId=self.spreadsheet_id,
+            body={"requests": requests}
+        ).execute()
+
+    def add_upload_date_comment(self, sheet_id):
+        """Добавляет комментарий с датой выгрузки."""
+        kiev_tz = pytz.timezone('Europe/Kiev')
+        current_time = datetime.now(kiev_tz).strftime("%d.%m.%Y %H:%M")
+        comment = f'Дата выгрузки: {current_time}'
+
+        self.service.spreadsheets().batchUpdate(
+            spreadsheetId=self.spreadsheet_id,
+            body={
+                "requests": [
+                    {
+                        "updateCells": {
+                            "range": {
+                                "sheetId": sheet_id,
+                                "startRowIndex": 0,
+                                "endRowIndex": 1,
+                                "startColumnIndex": 0,
+                                "endColumnIndex": 1
+                            },
+                            "rows": [
+                                {
+                                    "values": [
+                                        {
+                                            "note": comment
+                                        }
+                                    ]
+                                }
+                            ],
+                            "fields": "note"
+                        }
+                    }
+                ]
+            }
+        ).execute()
 
 google_sheets_service = GoogleSheetsService()
