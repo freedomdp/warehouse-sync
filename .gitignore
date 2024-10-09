@@ -1,5 +1,5 @@
-# Ignore credentials folder
-/credentials/
+# Ignore Google Cloud Service Account Credentials
+app/credentials/
 
 # Ignore logs folder
 /logs/
