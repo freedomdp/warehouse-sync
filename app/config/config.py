@@ -31,6 +31,10 @@ class Settings(BaseSettings):
     # Путь к файлу с учетными данными Google
     GOOGLE_CREDENTIALS_FILE: str = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'credentials', 'google_sheets_credentials.json')
 
+    # Настройки FTP
+    FTP_HOST: str
+    FTP_USER: str
+    FTP_PASSWORD: str
     class Config:
         env_file = ".env"
 
