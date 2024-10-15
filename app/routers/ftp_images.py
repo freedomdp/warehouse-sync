@@ -30,7 +30,7 @@ async def get_ftp_images():
         for article, images in grouped_images.items():
             html_content += f"<h2>Артикул: {article}</h2><ul>"
             for image in images:
-                html_content += f'<li><a href="/image/{image}" target="_blank">{image}</a></li>'
+                html_content += f'<li><a href="{image["ftp_link"]}" target="_blank">{image["filename"]}</a></li>'
             html_content += "</ul>"
         html_content += "</body></html>"
 

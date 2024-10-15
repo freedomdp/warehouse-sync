@@ -8,6 +8,7 @@ from app.config import settings
 from app.routers.assortment import get_assortment
 from app.routers.warehouse_balances import get_warehouse_balances
 from app.routers.warehouse_stock import get_warehouse_stock
+from app.routers.ftp_images import get_ftp_images
 
 class ProductCollectorService:
     def __init__(self):
@@ -116,19 +117,15 @@ class ProductCollectorService:
             "errors": [],
             "warnings": []
         }
-
         try:
-            # Обновление данных через соответствующие эндпоинты
+            # Существующая логика
             await get_assortment()
             result["steps_completed"].append("Assortment data update")
-
             await get_warehouse_balances()
             result["steps_completed"].append("Warehouse balances data update")
-
             await get_warehouse_stock()
             result["steps_completed"].append("Warehouse stock data update")
 
-            # Объединение данных
             combined_data = self.combine_data()
             result["steps_completed"].append("Data combination")
             logger.info(f"Объединено {len(combined_data)} записей")
@@ -139,6 +136,14 @@ class ProductCollectorService:
 
             if not merged_data:
                 result["warnings"].append("No data after merging duplicates")
+
+            # Новая логика: запуск эндпоинта /FTPimages
+            await get_ftp_images()
+            result["steps_completed"].append("FTP images data update")
+
+            # Добавление ссылок на изображения
+            merged_data = self.add_image_links(merged_data)
+            result["steps_completed"].append("Image links added to products")
 
             json_filename = os.path.join(self.json_dir, 'combined_products.json')
             self.save_to_json(merged_data, json_filename)
@@ -164,7 +169,6 @@ class ProductCollectorService:
         except Exception as e:
             logger.error(f"Ошибка при сборе и обработке данных: {str(e)}", exc_info=True)
             result["errors"].append(f"General error: {str(e)}")
-
         return result
 
     def save_to_json(self, data, filename):
@@ -181,5 +185,16 @@ class ProductCollectorService:
         tree = ET.ElementTree(root)
         tree.write(filename, encoding='utf-8', xml_declaration=True)
         logger.info(f"Данные сохранены в XML: {filename}")
+
+    def add_image_links(self, products):
+        ftp_images_file = os.path.join(self.json_dir, 'ftp_images.json')
+        ftp_images = load_json_file(ftp_images_file)
+
+        for product in products:
+            article = product.get('article')
+            if article and article in ftp_images:
+                product['image_links'] = [img['ftp_link'] for img in ftp_images[article]]
+
+        return products
 
 product_collector_service = ProductCollectorService()

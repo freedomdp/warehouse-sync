@@ -2,6 +2,7 @@ from ftplib import FTP
 from app.config import settings
 from app.utils.utils import logger
 from collections import defaultdict
+from urllib.parse import quote
 
 class FTPService:
     def __init__(self):
@@ -31,7 +32,9 @@ class FTPService:
                     parts = filename.split('_')
                     if len(parts) == 2:
                         article = parts[0]
-                        grouped_images[article].append(filename)
+                        # Создаем FTP-ссылку
+                        ftp_link = f"ftp://{self.user}:{quote(self.password)}@{self.host}/{filename}"
+                        grouped_images[article].append({"filename": filename, "ftp_link": ftp_link})
 
             return grouped_images
         except Exception as e:

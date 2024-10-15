@@ -1,12 +1,12 @@
-import time
-import random
-import pytz
-from datetime import datetime
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 from app.config import settings
 from app.utils.utils import logger
+import time
+import random
+import pytz
+from datetime import datetime
 
 class GoogleSheetsService:
     def __init__(self):
@@ -35,13 +35,16 @@ class GoogleSheetsService:
                 range=f"{self.sheet_name}!A1:Z"
             ).execute()
 
-            # Определяем порядок столбцов
-            columns = ['id', 'article', 'code', 'externalCode', 'pathname', 'name', 'description', 'salePrice', 'store', 'stock', 'updated']
+            # Определяем порядок столбцов, добавляем image_links
+            columns = ['id', 'article', 'code', 'externalCode', 'pathname', 'name', 'description', 'salePrice', 'store', 'stock', 'updated', 'image_links']
 
             # Подготавливаем данные для вставки
             values = [columns]  # Заголовки
             for item in data:
-                row = [str(item.get(col, '')) for col in columns]
+                row = [str(item.get(col, '')) for col in columns[:-1]]  # Все столбцы кроме image_links
+                # Обрабатываем image_links отдельно
+                image_links = item.get('image_links', [])
+                row.append('\n'.join(image_links) if image_links else '')
                 values.append(row)
 
             logger.info(f"Подготовлено {len(values) - 1} строк для загрузки в Google Sheets")
@@ -52,7 +55,6 @@ class GoogleSheetsService:
             for i in range(0, len(values), batch_size):
                 batch = values[i:i+batch_size]
                 body = {'values': batch}
-
                 for attempt in range(5):  # Попытки повтора при ошибке
                     try:
                         response = sheets.values().append(
@@ -75,7 +77,6 @@ class GoogleSheetsService:
             # Проверяем количество загруженных строк
             result = sheets.values().get(spreadsheetId=self.spreadsheet_id, range=f"{self.sheet_name}!A:A").execute()
             actual_rows = len(result.get('values', [])) - 1  # Вычитаем 1, так как первая строка - заголовки
-
             if actual_rows != len(data):
                 logger.error(f"Несоответствие количества строк: загружено {actual_rows}, ожидалось {len(data)}")
                 raise Exception("Количество загруженных строк не соответствует ожидаемому")
